@@ -44,80 +44,95 @@ class MiAgente(Agente):
         super().__init__(nombre="Mi Agente")
         self.visitadas = set()
         self.ultima_pos = None
+        self.historial = []
 
     def al_iniciar(self):
         self.visitadas.clear()
         self.ultima_pos = None
+        self.historial.clear()
 
     def decidir(self, percepcion):
 
         movimientos = self.ACCIONES
         pos_actual = percepcion["posicion"]
+        fila, col = pos_actual
 
         self.visitadas.add(pos_actual)
+        self.historial.append(pos_actual)
+
+        # mantener historial corto para detectar ciclos
+        if len(self.historial) > 6:
+            self.historial.pop(0)
 
         direccion_vertical, direccion_horizontal = percepcion.get(
-            'direccion_meta', (None, None)
+            "direccion_meta", (None, None)
         )
 
-        # 1. META inmediata
+        # 1. Si la meta está al lado, ir directo
         for mov in movimientos:
-            if percepcion[mov] == 'meta':
+            if percepcion[mov] == "meta":
+                self.ultima_pos = pos_actual
                 return mov
+
+        # 2. Si detecta un ciclo corto, probar otra salida libre
+        if len(self.historial) >= 4 and len(set(self.historial[-4:])) <= 2:
+            libres = [m for m in movimientos if percepcion[m] == "libre"]
+            if libres:
+                self.ultima_pos = pos_actual
+                return random.choice(libres)
 
         mejor_mov = None
         mejor_utilidad = float("-inf")
 
         for mov in movimientos:
-
-            if percepcion[mov] != 'libre':
+            if percepcion[mov] != "libre":
                 continue
 
             utilidad = 0
 
-            # acercarse a la meta
-            if mov == direccion_vertical:
-                utilidad += 5
-            if mov == direccion_horizontal:
-                utilidad += 5
-
-            # costo de movimiento
-            utilidad -= 1
-
             # calcular nueva posición
-            fila, col = pos_actual
-            
-
             if mov == "arriba":
                 nueva_pos = (fila - 1, col)
             elif mov == "abajo":
                 nueva_pos = (fila + 1, col)
             elif mov == "izquierda":
                 nueva_pos = (fila, col - 1)
-            elif mov == "derecha":
+            else:  # derecha
                 nueva_pos = (fila, col + 1)
 
-            # evitar loops (pero no exagerado)
-            if nueva_pos in self.visitadas:
-                utilidad -= 2
+            # acercarse a la meta
+            if mov == direccion_vertical:
+                utilidad += 8
+            if mov == direccion_horizontal:
+                utilidad += 8
 
-            # evitar retroceder inmediato
+            # evitar repetir demasiado
+            if nueva_pos in self.visitadas:
+                utilidad -= 4
+
+            # evitar retroceso inmediato
             if nueva_pos == self.ultima_pos:
-                utilidad -= 3
+                utilidad -= 5
+
+            # bonus por explorar posición nueva
+            if nueva_pos not in self.visitadas:
+                utilidad += 3
+
+            # costo por paso
+            utilidad -= 1
 
             if utilidad > mejor_utilidad:
                 mejor_utilidad = utilidad
                 mejor_mov = mov
 
-        # guardar última posición
         self.ultima_pos = pos_actual
 
         if mejor_mov:
             return mejor_mov
 
-        # fallback anti-bloqueo
-        libres = [m for m in movimientos if percepcion[m] == 'libre']
+        # último recurso
+        libres = [m for m in movimientos if percepcion[m] == "libre"]
         if libres:
             return random.choice(libres)
 
-        return 'abajo'
+        return "abajo"
